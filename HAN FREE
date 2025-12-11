@@ -1,0 +1,976 @@
+local WindUI do local ok, result = pcall(function() return require("./src/Init") end) if ok then WindUI = result else WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua"))() end end
+
+-- UI Setup
+
+local Window = WindUI:CreateWindow({
+
+    Title = "HAN XHUB",
+
+    Author = "HAN XHUB",
+
+    Folder = "ftgshub",
+
+    Icon = "computer",
+
+    NewElements = true,
+
+    HideSearchBar = false,
+
+    OpenButton = {
+
+        Title = "HAN XHUB",
+
+        CornerRadius = UDim.new(1,0),
+
+        StrokeThickness = 3,
+
+        Enabled = true,
+
+        Draggable = true,
+
+        OnlyMobile = false,
+
+        Color = ColorSequence.new(Color3.fromHex("#30FF6A"), Color3.fromHex("#e7ff2f"))
+
+    }
+
+})
+
+local CombatTab = Window:Tab({Title = "Combat", Icon = "sword"})
+
+local PlayerTab = Window:Tab({Title = "Player", Icon = "user"})
+
+local ESPTab = Window:Tab({Title = "ESP", Icon = "eye"})
+
+-- Services & Local Player Variables
+
+local Players = game:GetService("Players")
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local RunService = game:GetService("RunService")
+
+local Debris = game:GetService("Debris")
+
+local LocalPlayer = Players.LocalPlayer
+
+local Camera = workspace.CurrentCamera
+
+-- Silent Aim / FOV Variables
+
+local SelectedBodyPart = "Head"
+
+local SilentAimEnabled = false
+
+local WallShotEnabled = false -- New Toggle Variable
+
+local BASE_PREDICTION = 0.15
+
+local VEHICLE_MULTIPLIER = 0.6
+
+local GunLookup = {
+
+    ["P226"]=true,
+
+    ["MP5"]=true,
+
+    ["M24"]=true,
+
+    ["Draco"]=true,
+
+    ["Glock"]=true,
+
+    ["Sawnoff"]=true,
+
+    ["Uzi"]=true,
+
+    ["G3"]=true,
+
+    ["C9"]=true,
+
+    ["Hunting Rifle"]=true,
+
+    ["Anaconda"]=true,
+
+    ["AK47"]=true,
+
+    ["Remington"]=true,
+
+    ["Double Barrel"]=true
+
+}
+
+local FOVCircle = Drawing.new("Circle")
+
+FOVCircle.Radius = 150
+
+FOVCircle.Thickness = 2
+
+FOVCircle.Filled = false
+
+FOVCircle.Color = Color3.fromRGB(255,105,180)
+
+FOVCircle.Visible = false
+
+local showFov = false
+
+local TracerLine = Drawing.new("Line")
+
+TracerLine.Color = Color3.fromRGB(255,0,0)
+
+TracerLine.Thickness = 2
+
+TracerLine.Visible = false
+
+-- Combat Tab UI
+
+CombatTab:Toggle({
+
+    Title = "Enable Silent Aim",
+
+    Default = false,
+
+    Callback = function(v)
+
+        SilentAimEnabled = v
+
+        TracerLine.Visible = v and TracerLine.Visible
+
+    end
+
+})
+
+CombatTab:Toggle({
+
+    Title = "Enable Wall Shot",
+
+    Default = false,
+
+    Callback = function(v)
+
+        WallShotEnabled = v
+
+    end
+
+})
+
+CombatTab:Toggle({
+
+    Title = "Show FOV Circle",
+
+    Default = false,
+
+    Callback = function(v)
+
+        showFov = v
+
+        FOVCircle.Visible = v
+
+    end
+
+})
+
+CombatTab:Slider({
+
+    Title = "FOV Radius",
+
+    Step = 1,
+
+    Value = {Min = 50, Max = 500, Default = FOVCircle.Radius},
+
+    Callback = function(v)
+
+        FOVCircle.Radius = tonumber(v)
+
+    end
+
+})
+
+-- Player: High Jump Variables
+
+local player = Players.LocalPlayer
+
+local defaultJumpPower = 20
+
+local maxJumpPower = 100
+
+local highJumpPower = 70
+
+local highJumpEnabled = false
+
+local function setJumpPower(power)
+
+    local char = player.Character or player.CharacterAdded:Wait()
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+
+    if hum then
+
+        hum.UseJumpPower = true
+
+        hum.JumpPower = math.clamp(power,0,maxJumpPower)
+
+    end
+
+end
+
+PlayerTab:Toggle({
+
+    Title = "Enable High Jump",
+
+    Default = false,
+
+    Callback = function(state)
+
+        highJumpEnabled = state
+
+        if state then
+
+            setJumpPower(highJumpPower)
+
+        else
+
+            setJumpPower(defaultJumpPower)
+
+        end
+
+    end
+
+})
+
+PlayerTab:Slider({
+
+    Title = "High Jump Power",
+
+    Value = {Min = 20, Max = maxJumpPower, Default = highJumpPower},
+
+    Step = 1,
+
+    Callback = function(value)
+
+        highJumpPower = tonumber(value)
+
+        if highJumpEnabled then
+
+            setJumpPower(highJumpPower)
+
+        end
+
+    end
+
+})
+
+-- Player: Walk Speed Variables
+
+local speedEnabled = false
+
+local speedMultiplier = 0.10
+
+PlayerTab:Toggle({
+
+    Title = "Enable Walk Speed",
+
+    Default = false,
+
+    Callback = function(state)
+
+        speedEnabled = state
+
+    end
+
+})
+
+PlayerTab:Slider({
+
+    Title = "Speed Multiplier",
+
+    Value = {Min = 0.05, Max = 0.15, Default = speedMultiplier},
+
+    Step = 0.01,
+
+    Callback = function(value)
+
+        speedMultiplier = tonumber(value)
+
+    end
+
+})
+
+RunService.RenderStepped:Connect(function(delta)
+
+    if speedEnabled and player.Character then
+
+        local char = player.Character
+
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        local root = char:FindFirstChild("HumanoidRootPart")
+
+        if hum and root then
+
+            local moveDir = hum.MoveDirection
+
+            if moveDir.Magnitude > 0 then
+
+                root.CFrame = root.CFrame + moveDir.Unit * speedMultiplier * delta * 60
+
+            end
+
+        end
+
+    end
+
+end)
+
+-- Anti-Dead Variables & Functions
+
+local antiDeadEnabled = false
+
+local isAntiDead = false
+
+local depth = 3
+
+local fakeChar
+
+local function getCharData()
+
+    local char = player.Character or player.CharacterAdded:Wait()
+
+    local hum = char:WaitForChild("Humanoid")
+
+    local root = char:WaitForChild("HumanoidRootPart")
+
+    return char, hum, root
+
+end
+
+local function forceDownReal(root, hum, char)
+
+    local targetY = root.Position.Y - depth
+
+    root.CFrame = CFrame.new(root.Position.X, targetY, root.Position.Z)
+
+    root.Velocity = Vector3.zero
+
+    root.AssemblyLinearVelocity = Vector3.zero
+
+    hum.PlatformStand = true
+
+    for _, part in pairs(char:GetChildren()) do
+
+        if part:IsA("BasePart") then
+
+            part.CanCollide = false
+
+        end
+
+    end
+
+end
+
+local function createFakeCharacter(root)
+
+    local dummy = Instance.new("Model")
+
+    dummy.Name = player.Name .. "_Fake"
+
+    local hrp = Instance.new("Part")
+
+    hrp.Name = "HumanoidRootPart"
+
+    hrp.Size = Vector3.new(2,2,1)
+
+    hrp.Anchored = true
+
+    hrp.CanCollide = true
+
+    hrp.Position = root.Position
+
+    hrp.Parent = dummy
+
+    local humanoid = Instance.new("Humanoid")
+
+    humanoid.Parent = dummy
+
+    dummy.Parent = workspace
+
+    return dummy
+
+end
+
+function startAntiDeadLoop()
+
+    if isAntiDead then return end
+
+    isAntiDead = true
+
+    local char, hum, root = getCharData()
+
+    fakeChar = createFakeCharacter(root)
+
+    local fakeRoot = fakeChar:FindFirstChild("HumanoidRootPart")
+
+    
+
+    task.spawn(function()
+
+        while antiDeadEnabled and hum.Health > 0 and isAntiDead and hum.Health <= 21 do
+
+            forceDownReal(root, hum, char)
+
+            local power = 3
+
+            local dx = math.random(-power, power)
+
+            local dz = math.random(-power, power)
+
+            local spin = CFrame.Angles(0, math.rad(50), 0)
+
+            root.CFrame = (root.CFrame * spin) * CFrame.new(dx, 0, dz)
+
+            if fakeRoot then
+
+                fakeRoot.CFrame = root.CFrame + Vector3.new(0, depth, 0)
+
+            end
+
+            RunService.Heartbeat:Wait()
+
+        end
+
+        
+
+        isAntiDead = false
+
+        if fakeChar then fakeChar:Destroy() end
+
+        hum.PlatformStand = false
+
+        for _, part in pairs(char:GetChildren()) do
+
+            if part:IsA("BasePart") then
+
+                part.CanCollide = true
+
+            end
+
+        end
+
+        root.CFrame = root.CFrame + Vector3.new(0, depth + 2, 0)
+
+    end)
+
+end
+
+-- Anti-Dead UI & Events
+
+PlayerTab:Toggle({
+
+    Title = "Enable Anti-Dead",
+
+    Default = false,
+
+    Callback = function(state)
+
+        antiDeadEnabled = state
+
+        if state and player.Character then
+
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+
+            if hum and hum.Health <= 21 and not isAntiDead then
+
+                startAntiDeadLoop()
+
+            end
+
+        end
+
+    end
+
+})
+
+player.CharacterAdded:Connect(function(char)
+
+    local hum = char:WaitForChild("Humanoid")
+
+    if antiDeadEnabled and hum.Health <= 21 and not isAntiDead then
+
+        startAntiDeadLoop()
+
+    end
+
+    hum.HealthChanged:Connect(function(hp)
+
+        if antiDeadEnabled then
+
+            if hp <= 21 and not isAntiDead then
+
+                startAntiDeadLoop()
+
+            elseif hp >= 30 and isAntiDead then
+
+                isAntiDead = false
+
+            end
+
+        end
+
+    end)
+
+end)
+
+-- Re-apply JumpPower on character spawn
+
+player.CharacterAdded:Connect(function(char)
+
+    local humanoid = char:WaitForChild("Humanoid")
+
+    humanoid.UseJumpPower = true
+
+    task.wait(0.1)
+
+    if highJumpEnabled then
+
+        setJumpPower(highJumpPower)
+
+    else
+
+        setJumpPower(defaultJumpPower)
+
+    end
+
+end)
+
+setJumpPower(defaultJumpPower)
+
+-- Silent Aim / Wall Shot Core Functions
+
+local function PredictPosition(headPart)
+
+    local root = headPart.Parent:FindFirstChild("HumanoidRootPart")
+
+    if not root then return headPart.Position end
+
+    local vel = root.Velocity
+
+    local seat = root:FindFirstChildWhichIsA("WeldConstraint") or root:FindFirstChildWhichIsA("Weld")
+
+    local vehVel = seat and seat.Part0 and seat.Part0.Velocity or Vector3.new()
+
+    local speedMult = math.clamp(vehVel.Magnitude/50,0.5,2)
+
+    return headPart.Position + (vel + vehVel*VEHICLE_MULTIPLIER*speedMult)*BASE_PREDICTION
+
+end
+
+local function GetTargetPart(character)
+
+    return character and character:FindFirstChild(SelectedBodyPart)
+
+end
+
+local function GetClosestTarget()
+
+    local closest
+
+    local shortest = math.huge
+
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+
+    for _,plr in pairs(Players:GetPlayers()) do
+
+        if plr ~= LocalPlayer and plr.Character then
+
+            local part = GetTargetPart(plr.Character)
+
+            if part then
+
+                local screenPos,_ = Camera:WorldToViewportPoint(part.Position)
+
+                local dist = (Vector2.new(screenPos.X,screenPos.Y)-center).Magnitude
+
+                if (not showFov or dist<=FOVCircle.Radius) and dist<shortest then
+
+                    shortest = dist
+
+                    closest = plr
+
+                end
+
+            end
+
+        end
+
+    end
+
+    return closest
+
+end
+
+local function IsHoldingAllowedGun(args)
+
+    local ok, weapon = pcall(function() return args[3] end)
+
+    if ok and typeof(weapon)=="Instance" and GunLookup[weapon.Name] then
+
+        return true
+
+    end
+
+    for _,tool in pairs(LocalPlayer.Character:GetChildren()) do
+
+        if (tool:IsA("Tool") or tool:IsA("Model")) and GunLookup[tool.Name] then
+
+            return true
+
+        end
+
+    end
+
+    return false
+
+end
+
+local function SpawnDebugBullet(startPos,targetPos)
+
+    local dist = (targetPos-startPos).Magnitude
+
+    local part = Instance.new("Part")
+
+    part.Anchored = true
+
+    part.CanCollide = false
+
+    part.Material = Enum.Material.Neon
+
+    part.Size = Vector3.new(0.1,0.1,dist)
+
+    part.CFrame = CFrame.new(startPos,targetPos)*CFrame.new(0,0,-dist/2)
+
+    part.Color = Color3.fromRGB(255,50,150)
+
+    part.Parent = workspace
+
+    Debris:AddItem(part,5)
+
+end
+
+local send = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Send")
+
+local oldFire
+
+-- Core Hook: Intercepts the FireServer remote call
+
+oldFire = hookfunction(send.FireServer, function(self, ...)
+
+    local args = {...}
+
+    if IsHoldingAllowedGun(args) and (SilentAimEnabled or WallShotEnabled) then
+
+        local target = GetClosestTarget()
+
+        local aimPos
+
+        local targetHead
+
+        
+
+        -- Get target position if Silent Aim is active
+
+        if SilentAimEnabled and target and target.Character then
+
+            targetHead = target.Character:FindFirstChild("Head")
+
+            if targetHead then
+
+                aimPos = PredictPosition(targetHead)
+
+            end
+
+        end
+
+        
+
+        -- --- Wall Shot Logic (CFrame Modification) ---
+
+        if WallShotEnabled then
+
+            -- Bypass server raycast/wall checks
+
+            args[4] = CFrame.new(math.huge, math.huge, math.huge, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+        end
+
+        
+
+        -- --- Silent Aim Logic (Hit Argument Modification) ---
+
+        if SilentAimEnabled and targetHead and aimPos then
+
+            -- Set the Hit argument (args[5]) to correctly hit the predicted enemy head
+
+            args[5] = {
+
+                [1] = {
+
+                    [1] = {
+
+                        ["Instance"] = targetHead,
+
+                        ["Position"] = aimPos
+
+                    }
+
+                }
+
+            }
+
+            local myHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+
+            if myHead then
+
+                SpawnDebugBullet(myHead.Position, aimPos)
+
+            end
+
+        end
+
+    end
+
+    return oldFire(self, unpack(args))
+
+end)
+
+-- Render Loop for Visuals (FOV Circle and Tracer Line)
+
+RunService.RenderStepped:Connect(function()
+
+    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X/2,Camera.ViewportSize.Y/2)
+
+    if SilentAimEnabled then
+
+        local myHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+
+        local target = GetClosestTarget()
+
+        local targetHead = target and target.Character and target.Character:FindFirstChild("Head")
+
+        if myHead and targetHead then
+
+            local my2D = Vector2.new(Camera:WorldToViewportPoint(myHead.Position).X,Camera:WorldToViewportPoint(myHead.Position).Y)
+
+            local t2D = Vector2.new(Camera:WorldToViewportPoint(targetHead.Position).X,Camera:WorldToViewportPoint(targetHead.Position).Y)
+
+            local distFromCenter = (t2D - Vector2.new(Camera.ViewportSize.X/2,Camera.ViewportSize.Y/2)).Magnitude
+
+            if not showFov or distFromCenter<=FOVCircle.Radius then
+
+                TracerLine.From = my2D
+
+                TracerLine.To = t2D
+
+                TracerLine.Visible = true
+
+            else
+
+                TracerLine.Visible = false
+
+            end
+
+        else
+
+            TracerLine.Visible = false
+
+        end
+
+    else
+
+        TracerLine.Visible = false
+
+    end
+
+end)
+
+-- ESP Variables & Functions
+
+local ESP_Enabled = false
+
+local ESPTable = {}
+
+local function hideDefaultName(player)
+
+    local char = player.Character
+
+    if char then
+
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+        if humanoid then
+
+            humanoid.NameDisplayDistance = 0
+
+        end
+
+    end
+
+end
+
+local function showDefaultName(player)
+
+    local char = player.Character
+
+    if char then
+
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+        if humanoid then
+
+            humanoid.NameDisplayDistance = 100
+
+        end
+
+    end
+
+end
+
+local function createESP(player)
+
+    if not ESP_Enabled or player == LocalPlayer or ESPTable[player] then return end
+
+    hideDefaultName(player)
+
+    local char = player.Character
+
+    if char and char:FindFirstChild("HumanoidRootPart") then
+
+        local billboard = Instance.new("BillboardGui")
+
+        billboard.Adornee = char.HumanoidRootPart
+
+        billboard.Size = UDim2.new(0,60,0,20)
+
+        billboard.StudsOffset = Vector3.new(0,5,0)
+
+        billboard.AlwaysOnTop = true
+
+        billboard.Parent = game.CoreGui
+
+        
+
+        local label = Instance.new("TextLabel")
+
+        label.Size = UDim2.new(1,0,1,0)
+
+        label.BackgroundTransparency = 1
+
+        label.TextColor3 = Color3.fromRGB(255,255,255)
+
+        label.Text = player.Name
+
+        label.Font = Enum.Font.SourceSansBold
+
+        label.TextSize = 12
+
+        label.Parent = billboard
+
+        
+
+        ESPTable[player] = billboard
+
+    end
+
+end
+
+local function removeESP(player)
+
+    if ESPTable[player] then
+
+        ESPTable[player]:Destroy()
+
+        ESPTable[player] = nil
+
+        showDefaultName(player)
+
+    end
+
+end
+
+-- ESP Update Loop
+
+RunService.RenderStepped:Connect(function()
+
+    if not ESP_Enabled then return end
+
+    for player,esp in pairs(ESPTable) do
+
+        local char = player.Character
+
+        if char and char:FindFirstChild("HumanoidRootPart") then
+
+            esp.Adornee = char.HumanoidRootPart
+
+        end
+
+    end
+
+end)
+
+-- ESP Player Events
+
+Players.PlayerAdded:Connect(function(plr)
+
+    task.wait(1)
+
+    if ESP_Enabled then
+
+        createESP(plr)
+
+    end
+
+end)
+
+Players.PlayerRemoving:Connect(removeESP)
+
+-- ESP Tab UI
+
+ESPTab:Toggle({
+
+    Title = "Show Name ESP",
+
+    Default = false,
+
+    Callback = function(state)
+
+        ESP_Enabled = state
+
+        if state then
+
+            for _,plr in pairs(Players:GetPlayers()) do
+
+                createESP(plr)
+
+            end
+
+        else
+
+            for _,gui in pairs(ESPTable) do
+
+                gui:Destroy()
+
+            end
+
+            ESPTable = {}
+
+            for _,plr in pairs(Players:GetPlayers()) do
+
+                showDefaultName(plr)
+
+            end
+
+        end
+
+    end
+
+})
+
